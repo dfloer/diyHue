@@ -13,6 +13,7 @@ from threading import Thread
 from collections import defaultdict
 from uuid import getnode as get_mac
 from urllib.parse import urlparse, parse_qs
+import netifaces
 from functions import *
 
 update_lights_on_startup = False # if set to true all lights will be updated with last know state on startup.
@@ -197,6 +198,18 @@ def getIpAddress():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     return s.getsockname()[0]
+
+def getNetmask(ip_address, cidr=True):
+    interfaces = netifaces.interfaces()
+    for interface in interfaces:
+        if_address = netifaces.ifaddresses(interface)
+        for k, v in if_address.items():
+            for x in v:
+                if x['addr'] == ip_address:
+                    netmask = x["netmask"]
+                    if cidr:
+                        netmask = sum([bin(int(x)).count("1") for x in netmask.split(".")])
+                    return netmask
 
 ip_pices = getIpAddress().split(".")
 bridge_config["config"]["ipaddress"] = getIpAddress()
@@ -649,7 +662,9 @@ def discoverYeelight():
 def scanForLights(): #scan for ESP8266 lights and strips
     Thread(target=discoverYeelight).start()
     #return all host that listen on port 80
-    device_ips = check_output("nmap  " + getIpAddress() + "/24 -p80 --open -n | grep report | cut -d ' ' -f5", shell=True).decode('utf-8').split("\n")
+    ip_address = getIpAddress()
+    netmask = str(getNetmask(ip_address))
+    device_ips = check_output("nmap  " + ip_address + "/" + netmask + " -p80 --open -n | grep report | cut -d ' ' -f5", shell=True).decode('utf-8').split("\n")
     pprint(device_ips)
     del device_ips[-1] #delete last empty element in list
     for ip in device_ips:
